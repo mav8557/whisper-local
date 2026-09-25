@@ -16,6 +16,8 @@ Everyone whose pull requests have been merged. Add yourself here in your first P
 
 <!-- Add your name here in alphabetical order when contributing. -->
 
+- **[@mav8557](https://github.com/mav8557)** — fixed NVIDIA GPU onboarding enabling CUDA without cuBLAS/cuDNN, and the DLL search path for pip-installed NVIDIA libraries ([#15](https://github.com/drajb/whisper-local/issues/15))
+
 ## Upstream open-source projects we build on
 
 Whisper Local stands on the shoulders of a lot of excellent work:

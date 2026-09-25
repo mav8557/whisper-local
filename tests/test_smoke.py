@@ -2235,3 +2235,68 @@ class UserReportedSeptemberTests(unittest.TestCase):
         source = (ROOT / 'src' / 'whisper_key' / 'platform' / 'macos' / 'app.py').read_text(encoding='utf-8')
         self.assertIn('NSThread.isMainThread()', source, 'fast path when already on main')
         self.assertIn('mainQueue', source, 'must dispatch to the main queue')
+
+
+class GpuProbeTests(unittest.TestCase):
+    # The driver alone makes get_supported_compute_types('cuda') succeed, so the
+    # probe must also fail when cuBLAS / cuDNN can't be loaded — otherwise
+    # onboarding enables CUDA on machines with no runtime installed.
+    #
+    # gpu.py itself only needs the stdlib, but importing it through the package
+    # runs platform/windows/__init__.py, which needs pywin32 (absent in the lean
+    # CI env). Load the file directly so these tests run on every CI OS.
+    @staticmethod
+    def _load_gpu_module():
+        import importlib.util
+        path = ROOT / "src" / "whisper_key" / "platform" / "windows" / "gpu.py"
+        spec = importlib.util.spec_from_file_location("_gpu_probe_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _probe(self, cdll_side_effect):
+        import types
+        import unittest.mock as mock
+        gpu = self._load_gpu_module()
+        fake_ct2 = types.SimpleNamespace(
+            get_supported_compute_types=lambda device: {'float16', 'int8'})
+        with mock.patch.dict(sys.modules, {'ctranslate2': fake_ct2}), \
+             mock.patch.object(gpu.ctypes, 'CDLL', side_effect=cdll_side_effect), \
+             mock.patch.object(gpu, '_status'):
+            return gpu._test_ct2_gpu('cuda')
+
+    def test_fails_when_cublas_missing(self):
+        def cdll(name):
+            if name.startswith('cublas'):
+                raise OSError(f"Could not find module '{name}'")
+        self.assertFalse(self._probe(cdll))
+
+    def test_passes_when_all_libraries_load(self):
+        self.assertTrue(self._probe(lambda name: None))
+
+
+class NvidiaDllPathTests(unittest.TestCase):
+    def test_noop_off_windows(self):
+        import unittest.mock as mock
+        from whisper_key.utils import setup_nvidia_dll_path
+        before = os.environ.get('PATH', '')
+        with mock.patch.object(sys, 'platform', 'darwin'):
+            setup_nvidia_dll_path()
+        self.assertEqual(os.environ.get('PATH', ''), before)
+
+    def test_adds_nvidia_bin_dirs_to_path(self):
+        import site
+        import tempfile
+        import unittest.mock as mock
+        from whisper_key.utils import setup_nvidia_dll_path
+        with tempfile.TemporaryDirectory() as sp:
+            bin_dir = Path(sp) / 'nvidia' / 'cublas' / 'bin'
+            bin_dir.mkdir(parents=True)
+            with mock.patch.object(sys, 'platform', 'win32'), \
+                 mock.patch.object(site, 'getsitepackages', return_value=[sp]), \
+                 mock.patch.object(site, 'getusersitepackages', return_value=sp), \
+                 mock.patch.dict(os.environ, {'PATH': 'existing'}):
+                setup_nvidia_dll_path()
+                parts = os.environ['PATH'].split(os.pathsep)
+            self.assertEqual(parts[0], str(bin_dir))
+            self.assertEqual(parts.count(str(bin_dir)), 1)
