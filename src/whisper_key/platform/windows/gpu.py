@@ -361,11 +361,30 @@ def _check_runtime_compatibility(reqs: dict, runtime_version: str) -> bool:
     return True
 
 
+# get_supported_compute_types() only needs the CUDA driver, so it passes even
+# when cuBLAS / cuDNN can't be loaded. Actually load the libraries CTranslate2
+# needs for Whisper inference so a broken runtime is caught here instead of
+# as a hang on the first transcription.
+_CUDA_INFERENCE_DLLS = ('cublas64_12.dll', 'cublasLt64_12.dll',
+                        'cudnn_ops64_9.dll', 'cudnn_cnn64_9.dll')
+
+
 def _test_ct2_gpu(ct2_variant: str) -> bool:
     try:
         import ctranslate2
-        device = 'cuda'
-        supported = ctranslate2.get_supported_compute_types(device)
-        return len(supported) > 0
+        if not ctranslate2.get_supported_compute_types('cuda'):
+            return False
     except Exception:
         return False
+    if ct2_variant != 'cuda':
+        return True
+    missing = []
+    for name in _CUDA_INFERENCE_DLLS:
+        try:
+            ctypes.CDLL(name)
+        except OSError:
+            missing.append(name)
+    if missing:
+        _status(f"   ✗ Missing CUDA libraries: {', '.join(missing)}", 'warning')
+        return False
+    return True

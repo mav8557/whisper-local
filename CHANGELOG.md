@@ -2,6 +2,23 @@
 
 History inherited from upstream [`whisper-key-local`](https://github.com/PinW/whisper-key-local). Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **NVIDIA GPU: transcription hung forever after onboarding enabled CUDA.**
+  The GPU probe only called `ctranslate2.get_supported_compute_types('cuda')`,
+  which needs nothing but the NVIDIA driver. On a machine with a driver but no
+  CUDA runtime, onboarding took the "manually installed GPU" path, wrote
+  `device: cuda` without installing cuBLAS / cuDNN, and the first transcription
+  (including `--selftest` and the startup warmup) hung. The probe now also loads
+  `cublas64_12.dll`, `cublasLt64_12.dll`, `cudnn_ops64_9.dll` and
+  `cudnn_cnn64_9.dll`, so such machines get the real install prompt instead.
+- **pip-installed NVIDIA runtime DLLs were never on the DLL search path.**
+  `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` place their DLLs in
+  `site-packages/nvidia/*/bin`, which CTranslate2 does not register. These
+  folders are now added (via `os.add_dll_directory` and `PATH`) at startup,
+  before `ctranslate2` is imported.
+
 ## [0.19.0]
 
 Everything reported by users on 0.18.3.

@@ -11,10 +11,12 @@
 # Most --flags short-circuit and exit before the heavy app is even constructed,
 # so utility commands like --version, --doctor, --settings stay fast.
 
-from .utils import setup_portaudio_path
+from .utils import setup_portaudio_path, setup_nvidia_dll_path
 # PortAudio DLLs ship inside the package on Windows; this prepends the right
 # directory to PATH *before* sounddevice tries to load them.
 setup_portaudio_path()
+# Same for pip-installed CUDA/cuBLAS/cuDNN wheels, before ctranslate2 loads.
+setup_nvidia_dll_path()
 
 import argparse
 import logging

@@ -78,6 +78,39 @@ def setup_portaudio_path():
     if assets_dir.exists():
         os.environ['PATH'] = str(assets_dir) + os.pathsep + os.environ.get('PATH', '')
 
+# pip-installed NVIDIA runtime wheels (nvidia-cublas-cu12, nvidia-cudnn-cu12,
+# nvidia-cuda-runtime-cu12) put their DLLs in site-packages/nvidia/*/bin, which
+# is not on the Windows DLL search path. CTranslate2 only registers its own
+# package dir, and loads cuBLAS and the cuDNN 9 sub-libraries lazily on the
+# first GPU op, so without this the model *loads* on CUDA but the first
+# transcription fails. Must run before ctranslate2/faster_whisper is imported.
+def setup_nvidia_dll_path():
+    if sys.platform != 'win32':
+        return
+    import site
+    roots = list(site.getsitepackages())
+    try:
+        roots.append(site.getusersitepackages())
+    except Exception:
+        pass
+    found = []
+    for root in roots:
+        nvidia_dir = Path(root) / 'nvidia'
+        if not nvidia_dir.is_dir():
+            continue
+        for bin_dir in sorted(nvidia_dir.glob('*/bin')):
+            if bin_dir.is_dir() and str(bin_dir) not in found:
+                found.append(str(bin_dir))
+    for d in found:
+        try:
+            os.add_dll_directory(d)
+        except (OSError, AttributeError):
+            pass
+    if found:
+        # Lazy LoadLibrary calls inside CUDA libs use the legacy search order,
+        # which honours PATH but not add_dll_directory, so set both.
+        os.environ['PATH'] = os.pathsep.join(found) + os.pathsep + os.environ.get('PATH', '')
+
 # Find pythonw.exe for the interpreter we're running under. It normally sits
 # beside python.exe, but not always: a venv created with --without-pip, and some
 # Microsoft Store layouts, ship python.exe alone. Fall back to the BASE
